@@ -100,7 +100,7 @@ socks5h://singbox-warp:1081
 
 Clash API 必须只监听 `127.0.0.1:9090`，不得绑定共享 Docker 数据网络或发布端口。控制器通过 `docker exec -i singbox-warp nc 127.0.0.1 9090` 在容器网络命名空间内部访问；Bearer secret 与请求正文只通过 stdin 传入，不进入进程参数，也不会经过共享数据网络或环境代理。
 
-控制器严格验证 HTTP/1.0/1.1 状态行、ASCII header 语法和 ASCII `Content-Length`，按原始字节解析 CRLF framing，拒绝 LF/CR 单独换行、缺少状态码后分隔符、控制字符、重复 header、chunked 响应、长度不符、截断正文以及 204/205 状态携带的正文；畸形控制响应一律失败关闭。
+控制器严格验证 HTTP/1.0/1.1 状态行、ASCII header 语法和原始 CRLF framing；接受严格匹配的 ASCII `Content-Length`，或单一合法 `Transfer-Encoding: chunked` 并逐块校验十六进制长度、chunk CRLF、终止块与 trailer。拒绝 LF/CR 单独换行、缺少状态码后分隔符、控制字符、重复 header、Content-Length 与 chunked 共存、未知 transfer coding、畸形或截断 chunk、长度不符、截断正文以及 204/205 状态携带的正文；畸形控制响应一律失败关闭。
 
 ## sing-box 配置
 

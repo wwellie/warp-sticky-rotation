@@ -642,10 +642,52 @@ def clash_request(path: str, *, method: str = "GET", payload: dict[str, Any] | N
         if key in headers or any(byte != 0x09 and not 0x20 <= byte <= 0x7E for byte in value):
             raise RuntimeFault(invalid_response)
         headers[key] = value.strip(b" \t")
-    if b"transfer-encoding" in headers:
-        raise RuntimeFault(invalid_response)
+    transfer_encoding = headers.get(b"transfer-encoding")
     content_length = headers.get(b"content-length")
-    if content_length is None:
+    if transfer_encoding is not None:
+        if transfer_encoding.lower() != b"chunked" or content_length is not None:
+            raise RuntimeFault(invalid_response)
+        decoded = bytearray()
+        remaining = response_body
+        while True:
+            size_line, line_separator, remaining = remaining.partition(b"\r\n")
+            if not line_separator:
+                raise RuntimeFault(invalid_response)
+            size_text, extension_separator, extension = size_line.partition(b";")
+            if re.fullmatch(rb"[0-9A-Fa-f]+", size_text) is None:
+                raise RuntimeFault(invalid_response)
+            if extension_separator and (
+                not extension
+                or any(byte != 0x09 and not 0x20 <= byte <= 0x7E for byte in extension)
+            ):
+                raise RuntimeFault(invalid_response)
+            size = int(size_text, 16)
+            if size == 0:
+                if remaining == b"\r\n":
+                    trailer = b""
+                    trailing = b""
+                else:
+                    trailer, trailer_separator, trailing = remaining.partition(b"\r\n\r\n")
+                    if not trailer_separator:
+                        raise RuntimeFault(invalid_response)
+                if trailing:
+                    raise RuntimeFault(invalid_response)
+                if trailer:
+                    for line in trailer.split(b"\r\n"):
+                        if not line or line[:1] in {b" ", b"\t"} or b":" not in line:
+                            raise RuntimeFault(invalid_response)
+                        name, value = line.split(b":", 1)
+                        if re.fullmatch(rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name) is None or any(
+                            byte != 0x09 and not 0x20 <= byte <= 0x7E for byte in value
+                        ):
+                            raise RuntimeFault(invalid_response)
+                response_body = bytes(decoded)
+                break
+            if len(remaining) < size + 2 or remaining[size : size + 2] != b"\r\n":
+                raise RuntimeFault(invalid_response)
+            decoded.extend(remaining[:size])
+            remaining = remaining[size + 2 :]
+    elif content_length is None:
         if response_body:
             raise RuntimeFault(invalid_response)
     elif re.fullmatch(rb"[0-9]+", content_length) is None or len(response_body) != int(content_length):

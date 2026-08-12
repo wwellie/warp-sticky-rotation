@@ -370,6 +370,31 @@ class SelectorConfigurationTests(unittest.TestCase):
 
 
 class ClashRequestTests(unittest.TestCase):
+    def test_valid_chunked_response_is_decoded(self):
+        response = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Transfer-Encoding: chunked\r\n"
+                b"Connection: close\r\n\r\n"
+                b"8; extension=value\r\n"
+                b'{"connec'
+                b"\r\n"
+                b"A\r\n"
+                b'tions":[]}\r\n'
+                b"0\r\n"
+                b"X-Trailer: done\r\n\r\n"
+            ),
+            stderr=b"",
+        )
+        with (
+            mock.patch.object(module, "clash_secret", return_value="test-secret"),
+            mock.patch.object(module, "run_command", return_value=response),
+        ):
+            self.assertEqual(module.clash_request("/connections"), {"connections": []})
+
     def test_control_request_uses_container_loopback_and_stdin(self):
         response = subprocess.CompletedProcess(
             args=[],
@@ -460,7 +485,10 @@ class ClashRequestTests(unittest.TestCase):
             "HTTP/1.1 200 OK\r\nContent-Length: ٢\r\n\r\n{}".encode(),
             b"HTTP/1.1 200 OK\r\nX-Test: bad\x7fvalue\r\nContent-Length: 2\r\n\r\n{}",
             b"HTTP/1.1 204 No Content\r\nContent-Length: 2\r\n\r\n{}",
-            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 2\r\n\r\n2\r\n{}\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nZ\r\n{}\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n{}\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n{}",
         )
         for raw in responses:
             with self.subTest(raw=raw):
