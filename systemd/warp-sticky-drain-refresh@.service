@@ -1,0 +1,45 @@
+[Unit]
+Description=Drain and refresh WARP backend %i
+Documentation=file:///usr/local/share/doc/warp-sticky-rotation/README.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+ConditionPathExists=/usr/local/bin/warp-sticky-rotate
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/warp-sticky-rotate drain-refresh %i
+Nice=10
+IOSchedulingClass=idle
+Restart=no
+UMask=0077
+StateDirectory=warp-sticky-rotate
+StateDirectoryMode=0700
+RuntimeDirectory=warp-sticky-rotate
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

@@ -1,0 +1,12 @@
+[Unit]
+Description=Rotate WARP exits every three minutes
+
+[Timer]
+OnActiveSec=3min
+OnUnitActiveSec=3min
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=warp-sticky-rotate.service
+
+[Install]
+WantedBy=timers.target
