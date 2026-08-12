@@ -45,7 +45,27 @@ class BackendReadinessTests(unittest.TestCase):
         argv = runner.call_args.args[0]
         self.assertIn("NO_PROXY=", argv)
         self.assertIn("no_proxy=", argv)
-        self.assertEqual(argv[argv.index("--noproxy") + 1], "")
+        self.assertEqual(argv[:8], ["docker", "exec", "-e", "NO_PROXY=", "-e", "no_proxy=", "a" * 64, "sh"])
+        script = argv[-1]
+        self.assertIn("getent ahostsv6 www.cloudflare.com", script)
+        self.assertIn("--proxy socks5://127.0.0.1:1081", script)
+        self.assertIn('--resolve "www.cloudflare.com:443:[$v6]"', script)
+        self.assertIn('--noproxy ""', script)
+        self.assertNotIn("socks5h://", script)
+
+    def test_probe_rejects_ipv4_egress(self):
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="ip=104.28.1.2\nwarp=on\n",
+            stderr="",
+        )
+        with (
+            mock.patch.object(module, "container_info", return_value=(True, "gen-1")),
+            mock.patch.object(module, "run_command", return_value=completed),
+        ):
+            with self.assertRaisesRegex(module.RuntimeFault, "IPv6"):
+                module.probe_backend("warp3")
 
     def test_active_backend_is_reprobed_even_when_generation_is_unchanged(self):
         state = module.default_state()

@@ -19,11 +19,13 @@ import argparse
 import contextlib
 import datetime as dt
 import fcntl
+import ipaddress
 import json
 import math
 import os
 from pathlib import Path
 import re
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -857,6 +859,17 @@ def probe_backend(tag: str, *, container_ref: str | None = None) -> tuple[str, s
     running, generation_before = container_info(target)
     if not running or not generation_before:
         raise RuntimeFault(f"backend {tag} is not running")
+    trace_host = urllib.parse.urlsplit(TRACE_URL).hostname
+    if not trace_host:
+        raise RuntimeFault("WARP trace URL has no hostname")
+    trace_script = (
+        "set -eu; "
+        f"v6=$(getent ahostsv6 {shlex.quote(trace_host)} | awk 'NR==1{{print $1}}'); "
+        "[ -n \"$v6\" ]; "
+        "exec curl --disable -sS --max-time 8 "
+        f"--proxy socks5://127.0.0.1:{BACKEND_SOCKS_PORT} --noproxy \"\" "
+        f"--resolve \"{trace_host}:443:[$v6]\" {shlex.quote(TRACE_URL)}"
+    )
     proc = run_command(
         [
             "docker",
@@ -866,16 +879,9 @@ def probe_backend(tag: str, *, container_ref: str | None = None) -> tuple[str, s
             "-e",
             "no_proxy=",
             target,
-            "curl",
-            "--disable",
-            "-sS",
-            "--max-time",
-            "8",
-            "--proxy",
-            f"socks5h://127.0.0.1:{BACKEND_SOCKS_PORT}",
-            "--noproxy",
-            "",
-            TRACE_URL,
+            "sh",
+            "-c",
+            trace_script,
         ],
         timeout=12,
     )
@@ -886,12 +892,18 @@ def probe_backend(tag: str, *, container_ref: str | None = None) -> tuple[str, s
             values[key] = value.strip()
     if proc.returncode != 0 or values.get("warp") != "on" or not values.get("ip"):
         raise RuntimeFault(f"backend {tag} WARP trace unavailable")
+    try:
+        egress_ip = ipaddress.ip_address(values["ip"])
+    except ValueError as exc:
+        raise RuntimeFault(f"backend {tag} WARP trace returned an invalid IP address") from exc
+    if egress_ip.version != 6:
+        raise RuntimeFault(f"backend {tag} WARP trace did not use IPv6")
     running, generation_after = container_info(target)
     if not running or not generation_after:
         raise RuntimeFault(f"backend {tag} is not running")
     if generation_after != generation_before:
         raise RuntimeFault(f"backend {tag} generation changed during WARP trace")
-    return values["ip"], generation_after
+    return str(egress_ip), generation_after
 
 
 def front_socks_path_ready(tag: str) -> bool:

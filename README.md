@@ -19,7 +19,7 @@ warp3 → warp4 → warp5
 - 消费端始终使用同一个 SOCKS5 地址，不感知后端切换。
 - selector 切换只影响新连接，不主动中断已建立连接。
 - 每三分钟尝试轮换一次；没有安全可用的候选出口时跳过。
-- 候选出口在被选用前实时验证 Cloudflare trace 中的 `warp=on`。
+- 候选出口在被选用前通过 IPv6 实时验证 Cloudflare trace 中的 `warp=on`；trace 的 `ip=` 必须是合法 IPv6 地址，IPv4 结果失败关闭。
 - 原出口完成 drain 后才在同一容器网络命名空间内原地刷新 WireGuard，不使用固定强杀超时。
 - 配置、连接清单、容器身份或依赖存在不确定性时失败关闭。
 
@@ -41,14 +41,14 @@ warp3 → warp4 → warp5
 
 1. `tick` 验证 sing-box 配置、Clash selector 和三个后端状态。
 2. 按固定环顺序寻找下一个 `ready` 后端。
-3. 对当前后端和候选后端执行实时 WARP trace，并从 `singbox-warp` 完成候选后端的真实 SOCKS5 方法协商与 CONNECT 验证；候选公网 IP 不得与当前出口重复。
+3. 对当前后端和候选后端执行强制 IPv6 的实时 WARP trace，并从 `singbox-warp` 完成候选后端的真实 SOCKS5 方法协商与 CONNECT 验证；trace 必须返回 `warp=on` 和合法 IPv6 公网地址，候选 IPv6 不得与当前出口重复。
 4. 通过 Clash API 切换 selector。
 5. 被切出的后端进入 `draining`：
    - 在后端容器内安装 IPv4 和 IPv6 `NEW` 连接准入屏障；
    - 保留已有连接；
    - 统计 Clash chain 和容器内 SOCKS connected 连接。
 6. 两套库存连续归零并通过最终复核后，在绑定的 container ID 内执行 `wg-quick down/up`；不重启容器，不重建网络命名空间。
-7. 再次确认 IPv4/IPv6 屏障连续存在，验证 `warp=on`、新公网 IP、container ID 与 generation；同时确认容器名仍指向同一实例，然后移除屏障并标记为 `ready`。
+7. 再次确认 IPv4/IPv6 屏障连续存在，验证 `warp=on`、新的 IPv6 公网地址、container ID 与 generation；同时确认容器名仍指向同一实例，然后移除屏障并标记为 `ready`。
 
 当没有 `ready` 后端时，本轮轮换直接跳过。连接连续性优先于固定轮换节拍。
 
